@@ -1,0 +1,34 @@
+name: Verify IDO 5.3 C++ archive checksum
+on:
+  push:
+    branches: [chore/check-ido53-cfront-hash]
+jobs:
+  hash:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check archived compiler file from its original GitHub source
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib, os, tarfile, urllib.request
+          url = 'https://raw.githubusercontent.com/LLONSIT/qemu-irix-helpers/n/qemu/ido5.3_cfront.tar.xz'
+          path = '/tmp/ido5.3_cfront.tar.xz'
+          urllib.request.urlretrieve(url, path)
+          size = os.path.getsize(path)
+          sha256 = hashlib.sha256()
+          git_sha1 = hashlib.sha1(f'blob {size}\0'.encode())
+          with open(path, 'rb') as stream:
+              for block in iter(lambda: stream.read(1024 * 1024), b''):
+                  sha256.update(block)
+                  git_sha1.update(block)
+          print('ARCHIVE_BYTES:', size, flush=True)
+          print('ARCHIVE_GIT_BLOB_SHA1:', git_sha1.hexdigest(), flush=True)
+          print('ARCHIVE_SHA256:', sha256.hexdigest(), flush=True)
+          assert size == 47565884, 'unexpected file size'
+          assert git_sha1.hexdigest() == '1b2c28ca151fa4806182c85fff6fc44dc837c199', 'unexpected Git blob identity'
+          with tarfile.open(path, 'r:xz') as package:
+              names = {m.name.removeprefix('./').rstrip('/') for m in package.getmembers()}
+          expected = {'usr/bin/qemu-irix', 'usr/lib/driver', 'usr/lib/CC'}
+          print('ARCHIVE_REQUIRED_FILES:', {key: key in names for key in sorted(expected)}, flush=True)
+          assert expected <= names, 'archive lacks required compiler executables'
+          PY
